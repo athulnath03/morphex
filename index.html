@@ -75,22 +75,30 @@
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    align-items: stretch;
+    align-items: center;
+    gap: 10px;
     z-index: 10;
     width: min(500px, 88vw);
   }
 
-  .controls input[type="text"] {
+  .input-wrap {
     flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .controls input[type="text"] {
+    width: 100%;
     background: rgba(12,14,24,0.9);
     border: 1.5px solid var(--muted);
-    border-right: none;
+    border-radius: 999px;
     color: #e8eaf6;
     font-family: 'Space Mono', monospace;
     font-size: 14px;
-    padding: 13px 18px;
+    padding: 13px 42px 13px 22px;
     outline: none;
-    transition: border-color 0.25s;
+    transition: border-color 0.25s, box-shadow 0.25s;
     letter-spacing: 0.04em;
     -webkit-appearance: none;
   }
@@ -98,27 +106,50 @@
   .controls input[type="text"]::placeholder { color: var(--muted); }
   .controls input[type="text"]:focus {
     border-color: var(--accent1);
-    box-shadow: inset 0 0 0 1px var(--accent1), 0 0 20px rgba(0,240,255,0.1);
+    box-shadow: 0 0 20px rgba(0,240,255,0.12);
   }
 
-  .controls button {
+  #clearBtn {
+    position: absolute;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+    line-height: 1;
+  }
+  #clearBtn:hover { color: #ff3d6e; background: rgba(255,61,110,0.12); }
+  #clearBtn:active { color: #fff; background: rgba(255,61,110,0.3); }
+
+  #morphBtn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
     background: var(--accent1);
     border: none;
     color: #000;
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 13px 22px;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    transition: background 0.2s, box-shadow 0.2s;
-    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
     -webkit-tap-highlight-color: transparent;
+    padding: 0;
   }
-
-  .controls button:hover { background: #fff; box-shadow: 0 0 24px rgba(0,240,255,0.5); }
-  .controls button:active { background: #7b5ea7; color: #fff; }
+  #morphBtn:hover { background: #fff; box-shadow: 0 0 28px rgba(0,240,255,0.55); transform: scale(1.08); }
+  #morphBtn:active { background: #7b5ea7; color: #fff; transform: scale(0.95); }
 
   .hint {
     position: absolute;
@@ -133,15 +164,45 @@
     z-index: 10;
     white-space: nowrap;
   }
+
+  #morphBtn svg .morph-circle {
+    animation: morphCircle 2s ease-in-out infinite alternate;
+    transform-origin: center;
+  }
+  #morphBtn svg .morph-path {
+    animation: morphPath 2s ease-in-out infinite alternate;
+    transform-origin: center;
+  }
+  @keyframes morphCircle {
+    0%   { opacity: 1; r: 7; }
+    100% { opacity: 0; r: 3; }
+  }
+  @keyframes morphPath {
+    0%   { opacity: 0; transform: scale(0.6) rotate(45deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  }
+  #morphBtn:hover svg .morph-circle,
+  #morphBtn:hover svg .morph-path {
+    animation-duration: 0.8s;
+  }
 </style>
 </head>
 <body>
 
-<div class="header"><h1>Particle&nbsp;&nbsp;Form</h1></div>
+<div class="header"><h1>MORPHEX</h1></div>
 <canvas id="c"></canvas>
 <div class="controls">
-  <input type="text" id="textInput" placeholder="Type something…" maxlength="20" autocomplete="off" spellcheck="false">
-  <button id="morphBtn">Morph →</button>
+  <div class="input-wrap">
+    <input type="text" id="textInput" placeholder="Type something…" maxlength="20" autocomplete="off" spellcheck="false">
+    <button id="clearBtn">✕</button>
+  </div>
+  <button id="morphBtn">
+  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- circle morphing into a diamond/star shape -->
+    <circle class="morph-circle" cx="11" cy="11" r="7" stroke="#000" stroke-width="1.8" fill="none"/>
+    <path class="morph-path" d="M11 4 L18 11 L11 18 L4 11 Z" stroke="#000" stroke-width="1.8" fill="none" stroke-linejoin="round"/>
+  </svg>
+</button>
 </div>
 <div class="hint">touch · type · morph</div>
 
@@ -177,7 +238,7 @@ class P {
     this.lx = 0; this.ly = 0;
 
     this.hue   = rand(170, 230);
-    this.baseSize = 1.2;
+    this.baseSize = 1.0; // set properly in resize()
     this.speed = rand(0.055, 0.10);
     this.jitter = rand(0, 0.8);
     this.initialised = false;
@@ -192,7 +253,9 @@ function resize() {
   H = canvas.height = window.innerHeight;
   cx = W / 2;
   cy = H / 2;
-  BALL_R = Math.min(W, H) * 0.24;
+  BALL_R = Math.min(W, H) * 0.32;
+  const ps = Math.min(W, H) < 500 ? 0.65 : Math.min(W, H) < 900 ? 0.95 : 1.3;
+  pts.forEach(p => { p.baseSize = ps; });
   pts.forEach(p => {
     if (!p.initialised) { p.lx = p.x = cx; p.ly = p.y = cy; }
   });
@@ -202,10 +265,14 @@ resize();
 
 // ── Uniform sphere volume point ───────────────────────
 function spherePoint(R) {
-  const u     = Math.random();
+  // Surface + thin inner shell for volume feel but crisp edge
   const theta = Math.acos(2 * Math.random() - 1);
   const phi   = rand(0, Math.PI * 2);
-  const r     = R * Math.cbrt(u);
+  const shell = Math.random();
+  // 70% on surface shell, 30% in inner volume — gives solid look with sharp boundary
+  const r = shell < 0.70
+    ? R * rand(0.92, 1.0)          // surface shell
+    : R * Math.cbrt(Math.random()) * 0.92; // inner fill
   return {
     x: r * Math.sin(theta) * Math.cos(phi),
     y: r * Math.sin(theta) * Math.sin(phi),
@@ -321,6 +388,10 @@ function doMorph() {
   if (v) formText(v); else formBall();
 }
 btn.addEventListener('click', doMorph);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  input.value = '';
+  formBall();
+});
 input.addEventListener('keydown', e => { if (e.key === 'Enter') { doMorph(); input.blur(); } });
 
 // ── Mouse / touch ─────────────────────────────────────
@@ -356,7 +427,7 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   // Advance rotation (only in ball mode)
-  if (mode === 'ball') rotY += 0.004;
+  if (mode === 'ball') rotY += 0.003;
 
   const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
   const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
@@ -385,9 +456,9 @@ function draw() {
       p.sz += (p.tsz - p.sz) * p.speed;
 
       // Tiny 3D jitter
-      p.sx += (Math.random() - 0.5) * p.jitter * 0.3;
-      p.sy += (Math.random() - 0.5) * p.jitter * 0.3;
-      p.sz += (Math.random() - 0.5) * p.jitter * 0.3;
+      p.sx += (Math.random() - 0.5) * 0.08;
+      p.sy += (Math.random() - 0.5) * 0.08;
+      p.sz += (Math.random() - 0.5) * 0.08;
 
       // Rotate around Y axis (spin)
       const rx = p.sx * cosY - p.sz * sinY;
@@ -403,11 +474,11 @@ function draw() {
       p.x = cx + rx * scale;
       p.y = cy + ry * scale;
 
-      // Depth cues: z normalised 0(back)→1(front)
-      const depth = (rz2 + BALL_R) / (2 * BALL_R); // 0..1
-      const alpha = 0.25 + depth * 0.75;
-      const size  = p.baseSize * (0.4 + depth * 0.9) * scale;
-      const lit2  = Math.round(45 + depth * 30);
+      // Depth: uniform size, subtle alpha only — keeps sphere edge crisp
+      const depth = (rz2 + BALL_R) / (2 * BALL_R); // 0(back)→1(front)
+      const alpha = 0.35 + depth * 0.65;            // dim back, bright front
+      const size  = p.baseSize;                      // NO size variation — uniform dots
+      const lit2  = 62;
 
       // Repulsion in screen space
       const dx = p.x - mx, dy = p.y - my;
@@ -419,7 +490,7 @@ function draw() {
       }
 
       ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.3, p.baseSize * scale), 0, 6.2832);
+      ctx.arc(p.x, p.y, Math.max(0.4, size), 0, 6.2832);
       ctx.fillStyle = `hsl(${p.hue},80%,62%)`;
       ctx.fill();
 
