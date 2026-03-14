@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Form</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #04050a;
+    --accent1: #00f0ff;
+    --muted: #4a4f72;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: #e8eaf6;
+    font-family: 'Syne', sans-serif;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,240,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,240,255,0.025) 1px, transparent 1px);
+    background-size: 50px 50px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .header {
+    position: absolute;
+    top: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    z-index: 10;
+  }
+
+  .header h1 {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    font-weight: 400;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--accent1);
+    opacity: 0.7;
+  }
+
+  canvas {
+    display: block;
+    position: relative;
+    z-index: 1;
+    cursor: crosshair;
+    touch-action: none;
+  }
+
+  .controls {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: stretch;
+    z-index: 10;
+    width: min(500px, 88vw);
+  }
+
+  .controls input[type="text"] {
+    flex: 1;
+    background: rgba(12,14,24,0.9);
+    border: 1.5px solid var(--muted);
+    border-right: none;
+    color: #e8eaf6;
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    padding: 13px 18px;
+    outline: none;
+    transition: border-color 0.25s;
+    letter-spacing: 0.04em;
+    -webkit-appearance: none;
+  }
+
+  .controls input[type="text"]::placeholder { color: var(--muted); }
+  .controls input[type="text"]:focus {
+    border-color: var(--accent1);
+    box-shadow: inset 0 0 0 1px var(--accent1), 0 0 20px rgba(0,240,255,0.1);
+  }
+
+  .controls button {
+    background: var(--accent1);
+    border: none;
+    color: #000;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 13px 22px;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .controls button:hover { background: #fff; box-shadow: 0 0 24px rgba(0,240,255,0.5); }
+  .controls button:active { background: #7b5ea7; color: #fff; }
+
+  .hint {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    z-index: 10;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="header"><h1>Particle&nbsp;&nbsp;Form</h1></div>
+<canvas id="c"></canvas>
+<div class="controls">
+  <input type="text" id="textInput" placeholder="Type something…" maxlength="20" autocomplete="off" spellcheck="false">
+  <button id="morphBtn">Morph →</button>
+</div>
+<div class="hint">touch · type · morph</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const input  = document.getElementById('textInput');
+const btn    = document.getElementById('morphBtn');
+
+let W, H, cx, cy, BALL_R;
+const COUNT = 2200;
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+
+// ── Mode ──────────────────────────────────────────────
+let mode = 'ball'; // 'ball' | 'text'
+
+// ── Particle ──────────────────────────────────────────
+// Each particle stores 3D sphere coords + 2D text target
+class P {
+  constructor() {
+    // 3D position on/in sphere (updated every frame during ball mode)
+    this.sx = 0; this.sy = 0; this.sz = 0; // current 3D (lerped)
+    this.tsx = 0; this.tsy = 0; this.tsz = 0; // target 3D
+
+    // 2D projected screen position
+    this.x = 0; this.y = 0;
+
+    // Text mode 2D target
+    this.tx2 = 0; this.ty2 = 0;
+
+    // Lerped screen position for text mode
+    this.lx = 0; this.ly = 0;
+
+    this.hue   = rand(170, 230);
+    this.baseSize = 1.2;
+    this.speed = rand(0.055, 0.10);
+    this.jitter = rand(0, 0.8);
+    this.initialised = false;
+  }
+}
+
+const pts = Array.from({length: COUNT}, () => new P());
+
+// ── Resize ────────────────────────────────────────────
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+  BALL_R = Math.min(W, H) * 0.24;
+  pts.forEach(p => {
+    if (!p.initialised) { p.lx = p.x = cx; p.ly = p.y = cy; }
+  });
+}
+window.addEventListener('resize', () => { resize(); if (mode === 'ball') formBall(); });
+resize();
+
+// ── Uniform sphere volume point ───────────────────────
+function spherePoint(R) {
+  const u     = Math.random();
+  const theta = Math.acos(2 * Math.random() - 1);
+  const phi   = rand(0, Math.PI * 2);
+  const r     = R * Math.cbrt(u);
+  return {
+    x: r * Math.sin(theta) * Math.cos(phi),
+    y: r * Math.sin(theta) * Math.sin(phi),
+    z: r * Math.cos(theta)
+  };
+}
+
+// ── Ball formation — assign 3D targets ───────────────
+function formBall() {
+  mode = 'ball';
+  pts.forEach(p => {
+    const sp = spherePoint(BALL_R);
+    p.tsx = sp.x; p.tsy = sp.y; p.tsz = sp.z;
+    p.hue = rand(170, 230);
+    p.speed = rand(0.04, 0.09);
+    if (!p.initialised) {
+      p.sx = sp.x; p.sy = sp.y; p.sz = sp.z;
+      p.initialised = true;
+    }
+  });
+}
+
+// ── Text formation ────────────────────────────────────
+function formText(str) {
+  mode = 'text';
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const oc = off.getContext('2d');
+
+  const MAX_W = W * 0.88;
+  const words = str.trim().split(/\s+/);
+
+  // Build wrapped lines for a given font size
+  function buildLines(fontSize) {
+    oc.font = `800 ${fontSize}px Arial Black, sans-serif`;
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (oc.measureText(test).width > MAX_W && cur) {
+        lines.push(cur); cur = w;
+      } else { cur = test; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  // Binary-search largest font size that fits
+  let lo = 18, hi = Math.floor(H * 0.38), fs = lo;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const lines = buildLines(mid);
+    const totalH = lines.length * mid * 1.25;
+    oc.font = `800 ${mid}px Arial Black, sans-serif`;
+    const maxW = lines.reduce((m, l) => Math.max(m, oc.measureText(l).width), 0);
+    if (maxW <= MAX_W && totalH <= H * 0.55) { fs = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+
+  const lines = buildLines(fs);
+  const lineH = fs * 1.25;
+  const totalH = lines.length * lineH;
+  const startY = cy - totalH / 2 + lineH / 2;
+
+  oc.font = `800 ${fs}px Arial Black, sans-serif`;
+  oc.fillStyle = '#ffffff';
+  oc.textAlign = 'center';
+  oc.textBaseline = 'middle';
+  lines.forEach((line, i) => oc.fillText(line, W / 2, startY + i * lineH));
+
+  const img = oc.getImageData(0, 0, W, H).data;
+
+  let step = 3;
+  const lit = [];
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      if (img[(y * W + x) * 4 + 3] > 100) lit.push({x, y});
+    }
+  }
+  if (lit.length < 200) {
+    step = 2; lit.length = 0;
+    for (let y = 0; y < H; y += step) {
+      for (let x = 0; x < W; x += step) {
+        if (img[(y * W + x) * 4 + 3] > 80) lit.push({x, y});
+      }
+    }
+  }
+  if (lit.length === 0) { formBall(); return; }
+
+  for (let i = lit.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [lit[i], lit[j]] = [lit[j], lit[i]];
+  }
+
+  pts.forEach((p, i) => {
+    const t = lit[i % lit.length];
+    p.tx2 = t.x + rand(-1, 1);
+    p.ty2 = t.y + rand(-1, 1);
+    p.hue = rand(160, 210);
+    p.speed = rand(0.06, 0.13);
+    // seed lx/ly from current projected position
+    p.lx = p.x; p.ly = p.y;
+  });
+}
+
+// ── Rotation state ────────────────────────────────────
+let rotY = 0;       // auto-spin
+let rotX = 0.18;    // slight tilt so top/bottom visible
+
+// ── Morph trigger ─────────────────────────────────────
+function doMorph() {
+  const v = input.value.trim();
+  if (v) formText(v); else formBall();
+}
+btn.addEventListener('click', doMorph);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') { doMorph(); input.blur(); } });
+
+// ── Mouse / touch ─────────────────────────────────────
+let mx = -9999, my = -9999, mdown = false;
+
+canvas.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+canvas.addEventListener('mousedown', () => mdown = true);
+canvas.addEventListener('mouseup',   () => mdown = false);
+canvas.addEventListener('mouseleave',() => { mx = -9999; my = -9999; mdown = false; });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mx = e.touches[0].clientX; my = e.touches[0].clientY;
+}, {passive: false});
+canvas.addEventListener('touchstart', e => {
+  mx = e.touches[0].clientX; my = e.touches[0].clientY; mdown = true;
+}, {passive: true});
+canvas.addEventListener('touchend', () => { mx = -9999; my = -9999; mdown = false; });
+
+// ── Init ──────────────────────────────────────────────
+setTimeout(() => {
+  pts.forEach(p => { p.lx = p.x = cx; p.ly = p.y = cy; });
+  formBall();
+}, 80);
+
+// ── Render loop ───────────────────────────────────────
+const FOV = 900; // perspective strength
+
+function draw() {
+  requestAnimationFrame(draw);
+
+  ctx.fillStyle = 'rgba(4,5,10,0.30)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Advance rotation (only in ball mode)
+  if (mode === 'ball') rotY += 0.004;
+
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+
+  const repelR = mdown ? 110 : 65;
+  const repelF = mdown ? 12  : 6;
+
+  // Sort by Z so back particles draw first (painter's algorithm)
+  const sorted = pts.slice().sort((a, b) => {
+    if (mode !== 'ball') return 0;
+    // Rotate a.sx,sy,sz and b.sx,sy,sz to get Z
+    const azR = a.sx * cosY + a.sz * sinY; // rotated Z for a
+    const bzR = b.sx * cosY + b.sz * sinY;
+    return azR - bzR; // back-to-front
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const p = sorted[i];
+
+    if (mode === 'ball') {
+      // ── 3D mode: lerp toward target 3D coords, then rotate & project ──
+
+      // Lerp 3D position toward target
+      p.sx += (p.tsx - p.sx) * p.speed;
+      p.sy += (p.tsy - p.sy) * p.speed;
+      p.sz += (p.tsz - p.sz) * p.speed;
+
+      // Tiny 3D jitter
+      p.sx += (Math.random() - 0.5) * p.jitter * 0.3;
+      p.sy += (Math.random() - 0.5) * p.jitter * 0.3;
+      p.sz += (Math.random() - 0.5) * p.jitter * 0.3;
+
+      // Rotate around Y axis (spin)
+      const rx = p.sx * cosY - p.sz * sinY;
+      const rz = p.sx * sinY + p.sz * cosY;
+      const ry_mid = p.sy;
+
+      // Rotate around X axis (tilt)
+      const ry = ry_mid * cosX - rz * sinX;
+      const rz2 = ry_mid * sinX + rz * cosX;
+
+      // Perspective projection
+      const scale = FOV / (FOV + rz2 + BALL_R);
+      p.x = cx + rx * scale;
+      p.y = cy + ry * scale;
+
+      // Depth cues: z normalised 0(back)→1(front)
+      const depth = (rz2 + BALL_R) / (2 * BALL_R); // 0..1
+      const alpha = 0.25 + depth * 0.75;
+      const size  = p.baseSize * (0.4 + depth * 0.9) * scale;
+      const lit2  = Math.round(45 + depth * 30);
+
+      // Repulsion in screen space
+      const dx = p.x - mx, dy = p.y - my;
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      if (d < repelR && d > 0.5) {
+        const f = (repelR - d) / repelR;
+        p.x += (dx / d) * f * repelF;
+        p.y += (dy / d) * f * repelF;
+      }
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.3, p.baseSize * scale), 0, 6.2832);
+      ctx.fillStyle = `hsl(${p.hue},80%,62%)`;
+      ctx.fill();
+
+    } else {
+      // ── Text mode: lerp 2D screen position ──
+      p.lx += (p.tx2 - p.lx) * p.speed;
+      p.ly += (p.ty2 - p.ly) * p.speed;
+
+      // Jitter
+      p.lx += (Math.random() - 0.5) * p.jitter * 0.3;
+      p.ly += (Math.random() - 0.5) * p.jitter * 0.3;
+
+      // Repulsion
+      const dx = p.lx - mx, dy = p.ly - my;
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      if (d < repelR && d > 0.5) {
+        const f = (repelR - d) / repelR;
+        p.lx += (dx / d) * f * repelF;
+        p.ly += (dy / d) * f * repelF;
+      }
+
+      ctx.beginPath();
+      ctx.arc(p.lx, p.ly, p.baseSize, 0, 6.2832);
+      ctx.fillStyle = `hsl(${p.hue},80%,62%)`;
+      ctx.fill();
+    }
+  }
+}
+
+draw();
+</script>
+</body>
+</html>
